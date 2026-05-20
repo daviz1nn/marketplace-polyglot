@@ -16,18 +16,18 @@ import { CassandraService } from '../cassandra/cassandra.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 // ---- Tipos cross-service (espelham os contratos dos outros serviços) ----
-interface ClientSnapshot {
+export interface ClientSnapshot {
   client_id: string;
   name: string;
   email: string;
 }
-interface ProductDoc {
+export interface ProductDoc {
   id: string;
   name: string;
   price: number;
   stock: number;
 }
-interface OrderItemSnapshot {
+export interface OrderItemSnapshot {
   product_id: string;
   name: string;
   unit_price: string; // string para preservar precisão decimal no UDT
