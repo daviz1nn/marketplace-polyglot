@@ -37,3 +37,7 @@ data/
 
 # generated
 *.tsbuildinfo
+
+# Astra DB Secure Connect Bundle (contém certificados — nunca commitar)
+infra/cassandra/astra/*.zip
+infra/cassandra/astra/secure-connect-*

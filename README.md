@@ -333,10 +333,23 @@ npm run mongosh      # abre mongosh
 npm run cqlsh        # abre cqlsh
 ```
 
-### Modo fallback (máquina sem 4 GB para Cassandra)
+### Modo alternativo — bancos na nuvem (zero Docker)
 
-Use **DataStax Astra DB free tier** ou rode Cassandra fora do compose com
-`JVM_OPTS="-Xms512m -Xmx512m"`. Ajuste `CASSANDRA_CONTACT_POINTS` no `.env`.
+Se sua máquina **não tem virtualização habilitada na BIOS** ou tem **menos
+de 8 GB de RAM**, use o **modo cloud**: os 3 bancos rodam em free tiers
+(Supabase + MongoDB Atlas + DataStax Astra) e só os 4 serviços Node rodam
+localmente.
+
+**Setup completo passo a passo:** [`docs/cloud-setup.md`](docs/cloud-setup.md).
+
+Resumo:
+1. Criar 3 contas gratuitas (~25 min total)
+2. Preencher `.env` com `DATABASE_URL`, `MONGO_URL`, `ASTRA_BUNDLE_PATH`,
+   `ASTRA_APPLICATION_TOKEN`
+3. `npm run dev:local` — sobe os 4 serviços em um terminal só
+
+O código é **idêntico** entre os dois modos — apenas a string de conexão muda.
+A persistência poliglota é demonstrada da mesma forma.
 
 ---
 

@@ -22,7 +22,15 @@
     "compose:check": "docker compose config",
     "psql": "docker compose exec postgres psql -U postgres -d marketplace",
     "mongosh": "docker compose exec mongo mongosh marketplace",
-    "cqlsh": "docker compose exec cassandra cqlsh"
+    "cqlsh": "docker compose exec cassandra cqlsh",
+    "dev:local": "concurrently -k -n CLIENTS,PRODUCTS,ORDERS,FRONTEND -c blue,green,magenta,yellow \"npm:dev:clients\" \"npm:dev:products\" \"npm:dev:orders\" \"npm:dev:frontend\"",
+    "dev:clients": "npm --workspace clients-service run start:dev",
+    "dev:products": "npm --workspace products-service run start:dev",
+    "dev:orders": "npm --workspace orders-service run start:dev",
+    "dev:frontend": "npm --workspace frontend run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
   },
   "engines": {
     "node": ">=22.0.0",
