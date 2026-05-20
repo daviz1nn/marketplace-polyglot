@@ -1,0 +1,205 @@
+# =========================================================================
+# Marketplace Polyglot — docker-compose.yml
+#
+# Sobe TODA a stack do projeto:
+#   - 3 bancos (Postgres 17, MongoDB 8, Cassandra 5.0)
+#   - 1 container one-shot para aplicar schema no Cassandra
+#   - 3 microserviços NestJS
+#   - 1 frontend React (Vite dev server)
+#
+# Requer Docker Compose v2.20+ (para service_completed_successfully).
+# Primeiro boot leva ~2 min — o Cassandra é o gargalo (~90s para healthy).
+# =========================================================================
+
+name: marketplace-polyglot
+
+services:
+  # ===== Bancos de dados =====
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: marketplace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-marketplace}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-marketplace}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - marketplace-net
+
+  mongo:
+    image: mongo:8
+    container_name: marketplace-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-marketplace}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+      - ./infra/mongo/init.js:/docker-entrypoint-initdb.d/01-init.js:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.runCommand({ping:1}).ok\" | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - marketplace-net
+
+  cassandra:
+    image: cassandra:5.0
+    container_name: marketplace-cassandra
+    restart: unless-stopped
+    environment:
+      # Heap reduzido para não derrubar máquinas de avaliador
+      MAX_HEAP_SIZE: 1G
+      HEAP_NEWSIZE: 200M
+      CASSANDRA_CLUSTER_NAME: marketplace-cluster
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_ENDPOINT_SNITCH: SimpleSnitch
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES'"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s   # Cassandra leva ~90s para ficar realmente pronto
+    networks:
+      - marketplace-net
+
+  # ===== Init one-shot para o Cassandra =====
+  # Aplica o schema (UDTs + 3 tabelas) e sai. Os serviços que dependem do
+  # Cassandra esperam este container terminar COM SUCESSO antes de subir.
+  cassandra-init:
+    image: cassandra:5.0
+    container_name: marketplace-cassandra-init
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    volumes:
+      - ./infra/cassandra/init.cql:/init.cql:ro
+      - ./infra/cassandra/wait-and-init.sh:/wait-and-init.sh:ro
+    entrypoint: ["/bin/sh", "/wait-and-init.sh"]
+    networks:
+      - marketplace-net
+    restart: "no"   # one-shot, nunca reiniciar
+
+  # ===== Backend services =====
+
+  clients-service:
+    build:
+      context: ./services/clients-service
+      dockerfile: Dockerfile
+    container_name: marketplace-clients-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PORT: 3001
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-marketplace}?schema=public"
+    ports:
+      - "3001:3001"
+    networks:
+      - marketplace-net
+
+  products-service:
+    build:
+      context: ./services/products-service
+      dockerfile: Dockerfile
+    container_name: marketplace-products-service
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PORT: 3002
+      MONGO_URL: "mongodb://mongo:27017/${MONGO_DB:-marketplace}"
+    ports:
+      - "3002:3002"
+    networks:
+      - marketplace-net
+
+  orders-service:
+    build:
+      context: ./services/orders-service
+      dockerfile: Dockerfile
+    container_name: marketplace-orders-service
+    restart: unless-stopped
+    depends_on:
+      cassandra-init:
+        condition: service_completed_successfully
+      clients-service:
+        condition: service_started
+      products-service:
+        condition: service_started
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PORT: 3003
+      CASSANDRA_CONTACT_POINTS: cassandra
+      CASSANDRA_PORT: 9042
+      CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE:-marketplace}
+      CASSANDRA_LOCAL_DATACENTER: datacenter1
+      CLIENTS_SERVICE_URL: "http://clients-service:3001"
+      PRODUCTS_SERVICE_URL: "http://products-service:3002"
+    ports:
+      - "3003:3003"
+    networks:
+      - marketplace-net
+
+  # ===== Frontend =====
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: marketplace-frontend
+    restart: unless-stopped
+    depends_on:
+      - clients-service
+      - products-service
+      - orders-service
+    environment:
+      # Visto pelo browser → usa localhost
+      VITE_CLIENTS_URL: "http://localhost:3001"
+      VITE_PRODUCTS_URL: "http://localhost:3002"
+      VITE_ORDERS_URL: "http://localhost:3003"
+    ports:
+      - "5173:5173"
+    networks:
+      - marketplace-net
+
+# =========================================================================
+
+volumes:
+  pg-data:
+    name: marketplace-pg-data
+  mongo-data:
+    name: marketplace-mongo-data
+  cassandra-data:
+    name: marketplace-cassandra-data
+
+networks:
+  marketplace-net:
+    name: marketplace-net
+    driver: bridge

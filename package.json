@@ -1,0 +1,32 @@
+{
+  "name": "marketplace-polyglot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Marketplace com Persistência Poliglota — Postgres + MongoDB + Cassandra",
+  "workspaces": [
+    "services/clients-service",
+    "services/products-service",
+    "services/orders-service",
+    "frontend"
+  ],
+  "scripts": {
+    "up": "docker compose up --build",
+    "up:detach": "docker compose up --build -d",
+    "down": "docker compose down",
+    "down:clean": "docker compose down -v",
+    "logs": "docker compose logs -f",
+    "ps": "docker compose ps",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "compose:check": "docker compose config",
+    "psql": "docker compose exec postgres psql -U postgres -d marketplace",
+    "mongosh": "docker compose exec mongo mongosh marketplace",
+    "cqlsh": "docker compose exec cassandra cqlsh"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "license": "MIT"
+}

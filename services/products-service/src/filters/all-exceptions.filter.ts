@@ -1,0 +1,51 @@
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
+import { Request, Response } from 'express';
+
+@Catch()
+export class AllExceptionsFilter implements ExceptionFilter {
+  private readonly logger = new Logger(AllExceptionsFilter.name);
+
+  catch(exception: unknown, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
+
+    const status =
+      exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+
+    const message =
+      exception instanceof HttpException
+        ? exception.getResponse()
+        : exception instanceof Error
+          ? exception.message
+          : 'Internal server error';
+
+    const correlationId = (request.headers['x-correlation-id'] as string) ?? null;
+
+    this.logger.error({
+      msg: 'unhandled exception',
+      status,
+      path: request.url,
+      method: request.method,
+      correlationId,
+      err: exception instanceof Error ? exception.stack : exception,
+    });
+
+    response.status(status).json({
+      statusCode: status,
+      message,
+      path: request.url,
+      method: request.method,
+      timestamp: new Date().toISOString(),
+      service: 'products-service',
+      correlationId,
+    });
+  }
+}

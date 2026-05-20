@@ -1,0 +1,179 @@
+{
+  "info": {
+    "name": "Marketplace Polyglot",
+    "description": "Coleção de requests para validar end-to-end o projeto.\n\nEnvironment variables esperadas:\n- baseClients (http://localhost:3001)\n- baseProducts (http://localhost:3002)\n- baseOrders (http://localhost:3003)\n- clientId (preenchido após criar cliente)\n- productId (preenchido após criar produto)\n- orderId (preenchido após criar pedido)\n- idemKey (UUID v4 — use o random Postman: {{$guid}})",
+    "_postman_id": "marketplace-polyglot-001",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseClients", "value": "http://localhost:3001" },
+    { "key": "baseProducts", "value": "http://localhost:3002" },
+    { "key": "baseOrders", "value": "http://localhost:3003" },
+    { "key": "clientId", "value": "11111111-1111-1111-1111-111111111111" },
+    { "key": "productId", "value": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1" },
+    { "key": "orderId", "value": "" },
+    { "key": "idemKey", "value": "{{$guid}}" }
+  ],
+  "item": [
+    {
+      "name": "Health checks",
+      "item": [
+        {
+          "name": "GET clients-service /health",
+          "request": { "method": "GET", "url": { "raw": "{{baseClients}}/health", "host": ["{{baseClients}}"], "path": ["health"] } }
+        },
+        {
+          "name": "GET products-service /health",
+          "request": { "method": "GET", "url": { "raw": "{{baseProducts}}/health", "host": ["{{baseProducts}}"], "path": ["health"] } }
+        },
+        {
+          "name": "GET orders-service /health/deep",
+          "request": { "method": "GET", "url": { "raw": "{{baseOrders}}/health/deep", "host": ["{{baseOrders}}"], "path": ["health", "deep"] } }
+        }
+      ]
+    },
+    {
+      "name": "Clients (Postgres)",
+      "item": [
+        {
+          "name": "POST /clients",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Diego Pinto\",\n  \"email\": \"diego@example.com\",\n  \"cpf\": \"45678901234\",\n  \"phone\": \"+5511999990004\",\n  \"address\": { \"street\": \"Rua D\", \"number\": \"99\", \"city\": \"Curitiba\", \"state\": \"PR\", \"zip\": \"80000-000\" }\n}"
+            },
+            "url": { "raw": "{{baseClients}}/clients", "host": ["{{baseClients}}"], "path": ["clients"] }
+          }
+        },
+        {
+          "name": "GET /clients",
+          "request": { "method": "GET", "url": { "raw": "{{baseClients}}/clients", "host": ["{{baseClients}}"], "path": ["clients"] } }
+        },
+        {
+          "name": "GET /clients/{{clientId}}",
+          "request": { "method": "GET", "url": { "raw": "{{baseClients}}/clients/{{clientId}}", "host": ["{{baseClients}}"], "path": ["clients", "{{clientId}}"] } }
+        }
+      ]
+    },
+    {
+      "name": "Products (MongoDB)",
+      "item": [
+        {
+          "name": "POST /products",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Mochila Urban Pro\",\n  \"description\": \"Mochila com compartimento para notebook\",\n  \"category\": \"acessorios\",\n  \"price\": 159.90,\n  \"stock\": 30,\n  \"attributes\": { \"capacidade_litros\": 25, \"cor\": \"preto\", \"impermeavel\": true }\n}"
+            },
+            "url": { "raw": "{{baseProducts}}/products", "host": ["{{baseProducts}}"], "path": ["products"] }
+          }
+        },
+        {
+          "name": "GET /products?category=vestuario",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseProducts}}/products?category=vestuario",
+              "host": ["{{baseProducts}}"],
+              "path": ["products"],
+              "query": [{ "key": "category", "value": "vestuario" }]
+            }
+          }
+        },
+        {
+          "name": "PATCH /products/{{productId}}/stock (atomic)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"delta\": -1 }" },
+            "url": {
+              "raw": "{{baseProducts}}/products/{{productId}}/stock",
+              "host": ["{{baseProducts}}"],
+              "path": ["products", "{{productId}}", "stock"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders (Cassandra)",
+      "item": [
+        {
+          "name": "POST /orders (com Idempotency-Key)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.order_id) pm.collectionVariables.set('orderId', json.order_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idemKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{clientId}}\",\n  \"items\": [\n    { \"product_id\": \"{{productId}}\", \"quantity\": 2 }\n  ]\n}"
+            },
+            "url": { "raw": "{{baseOrders}}/orders", "host": ["{{baseOrders}}"], "path": ["orders"] }
+          }
+        },
+        {
+          "name": "POST /orders (REPLAY — mesma Idempotency-Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idemKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{clientId}}\",\n  \"items\": [\n    { \"product_id\": \"{{productId}}\", \"quantity\": 2 }\n  ]\n}"
+            },
+            "url": { "raw": "{{baseOrders}}/orders", "host": ["{{baseOrders}}"], "path": ["orders"] }
+          }
+        },
+        {
+          "name": "GET /orders/{{orderId}}",
+          "request": { "method": "GET", "url": { "raw": "{{baseOrders}}/orders/{{orderId}}", "host": ["{{baseOrders}}"], "path": ["orders", "{{orderId}}"] } }
+        },
+        {
+          "name": "GET /orders/by-client/{{clientId}} (query estrela)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseOrders}}/orders/by-client/{{clientId}}?limit=20",
+              "host": ["{{baseOrders}}"],
+              "path": ["orders", "by-client", "{{clientId}}"],
+              "query": [{ "key": "limit", "value": "20" }]
+            }
+          }
+        },
+        {
+          "name": "PATCH /orders/{{orderId}}/status",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"status\": \"paid\" }" },
+            "url": {
+              "raw": "{{baseOrders}}/orders/{{orderId}}/status",
+              "host": ["{{baseOrders}}"],
+              "path": ["orders", "{{orderId}}", "status"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

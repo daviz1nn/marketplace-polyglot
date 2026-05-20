@@ -1,0 +1,29 @@
+// =========================================================================
+// clients-service — Prisma schema
+//
+// O modelo Client espelha exatamente a tabela criada em infra/postgres/init.sql.
+// Marcamos a tabela como já existente (sem `prisma migrate dev`) — o schema
+// é aplicado pelo init.sql do Docker. `prisma migrate deploy` é noop aqui.
+// =========================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Client {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String   @db.VarChar(120)
+  email      String   @unique @db.VarChar(160)
+  cpf        String   @unique @db.Char(11)
+  phone      String?  @db.VarChar(20)
+  address    Json     @db.JsonB
+  created_at DateTime @default(now()) @db.Timestamptz()
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz()
+
+  @@map("clients")
+}
