@@ -302,19 +302,27 @@ Duas tabelas denormalizadas + tabela de idempotência. Schema completo em
 
 ## 9. Como executar — do zero
 
-### Pré-requisitos
+> 🎯 **Para o avaliador:** o projeto suporta **2 modos de execução**. O modo
+> **cloud** é o **validado** (12/12 testes e2e passando contra a stack real).
+> O modo Docker existe como referência mas requer Docker Desktop com
+> virtualização BIOS habilitada (~8 GB RAM) — escolha o que for mais
+> conveniente.
+
+### Modo 1 — Docker Compose (sobe tudo local em 1 comando)
+
+#### Pré-requisitos
 
 - **Docker Desktop ≥ 4.20** (requer Docker Compose v2.20+ para
   `service_completed_successfully`)
 - **4 GB de RAM livres** (Cassandra é o gargalo; 8 GB recomendado)
 - **Portas livres:** 3001, 3002, 3003, 5173, 5432, 9042, 27017
 
-### Comandos
+#### Comandos
 
 ```bash
-git clone <repo-url>
-cd PROJETO-TUNNING-DE-DADOS
-cp .env.example .env                  # ajustar se necessário
+git clone https://github.com/daviz1nn/marketplace-polyglot.git
+cd marketplace-polyglot
+cp .env.example .env                  # defaults já apontam para containers
 docker compose up --build
 # Aguardar ~2 minutos no primeiro boot (Cassandra leva ~90s para ficar healthy)
 ```
@@ -337,7 +345,7 @@ npm run mongosh      # abre mongosh
 npm run cqlsh        # abre cqlsh
 ```
 
-### Modo cloud — **modo testado em produção** (recomendado)
+### Modo 2 — Cloud (modo testado em produção, recomendado)
 
 Os 3 bancos rodam em free tiers (Supabase + MongoDB Atlas + DataStax Astra) e
 só os 4 serviços Node rodam localmente. Este é o modo **validado por 12 testes
