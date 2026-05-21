@@ -7,7 +7,6 @@ import {
   HttpCode,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -61,7 +60,7 @@ export class OrdersController {
   })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   findByClient(
-    @Param('clientId', new ParseUUIDPipe()) clientId: string,
+    @Param('clientId') clientId: string,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
     return this.orders.findByClient(clientId, limit);

@@ -7,7 +7,6 @@ import {
   HttpStatus,
   Param,
   ParseIntPipe,
-  ParseUUIDPipe,
   Put,
   Post,
   Query,
@@ -43,20 +42,20 @@ export class ClientsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Detalha um cliente por id' })
-  findOne(@Param('id', new ParseUUIDPipe()) id: string) {
+  findOne(@Param('id') id: string) {
     return this.clients.findOne(id);
   }
 
   @Put(':id')
   @ApiOperation({ summary: 'Atualiza nome/phone/address de um cliente' })
-  update(@Param('id', new ParseUUIDPipe()) id: string, @Body() dto: UpdateClientDto) {
+  update(@Param('id') id: string, @Body() dto: UpdateClientDto) {
     return this.clients.update(id, dto);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove um cliente' })
-  remove(@Param('id', new ParseUUIDPipe()) id: string) {
+  remove(@Param('id') id: string) {
     return this.clients.remove(id);
   }
 }

@@ -17,7 +17,12 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
+const dns = require('node:dns');
 const { Client } = require('cassandra-driver');
+
+// Força DNS Google para resolver hostnames do Astra DB.
+// Necessário em redes domésticas com DNS resolver limitado.
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -47,16 +52,16 @@ if (!fs.existsSync(bundlePath)) {
 const cqlPath = path.resolve(__dirname, 'init.cql');
 const rawCql = fs.readFileSync(cqlPath, 'utf8');
 
-// Particiona em statements (separa por `;` no fim de linha) e filtra CREATE KEYSPACE
+// 1. Remove TODAS as linhas de comentário (`-- ...` linha inteira)
+// 2. Particiona por `;`
+// 3. Trim, filtra empty, e filtra CREATE KEYSPACE / USE (Astra gerencia)
 const statements = rawCql
-  .split(/;\s*\r?\n/)
+  .replace(/^\s*--.*$/gm, '')
+  .split(/;\s*\r?\n?/)
   .map((s) => s.trim())
-  .filter((s) => s.length > 0 && !s.startsWith('--'))
+  .filter((s) => s.length > 0)
   .filter((s) => !/^\s*CREATE\s+KEYSPACE/i.test(s))
-  .filter((s) => !/^\s*USE\s+/i.test(s))
-  // Remove comentários inline `-- ...` antes do statement
-  .map((s) => s.replace(/^\s*--.*$/gm, '').trim())
-  .filter((s) => s.length > 0);
+  .filter((s) => !/^\s*USE\s+/i.test(s));
 
 async function main() {
   const client = new Client({
