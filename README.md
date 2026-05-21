@@ -1,17 +1,21 @@
 # Marketplace Polyglot — Projeto de Persistência Poliglota
 
-[![CI](https://img.shields.io/badge/CI-pending-lightgrey.svg)](.github/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen.svg)](https://nodejs.org/)
-[![Docker Compose](https://img.shields.io/badge/compose-%E2%89%A52.20-blue.svg)](https://docs.docker.com/compose/)
 [![NestJS](https://img.shields.io/badge/NestJS-11-E0234E.svg)](https://nestjs.com/)
+[![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791.svg)](https://www.postgresql.org/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8-47A248.svg)](https://www.mongodb.com/)
 [![Cassandra](https://img.shields.io/badge/Cassandra-5.0-1287B1.svg)](https://cassandra.apache.org/)
+[![E2E](https://img.shields.io/badge/e2e-12%2F12_passing-brightgreen.svg)](scripts/e2e-test.js)
 
 > Aplicação acadêmica que materializa o conceito de **Polyglot Persistence**
 > (Sadalage & Fowler, 2012): cada agregado é persistido no banco cujo modelo se
 > alinha ao **padrão de acesso da aplicação**.
+
+> **Status:** Fase 1 entregue, executando em produção real via 3 free tiers
+> cloud (Supabase + MongoDB Atlas + DataStax Astra). Todos os 12 testes
+> end-to-end passando (`npm run e2e`).
 
 ---
 
@@ -333,12 +337,17 @@ npm run mongosh      # abre mongosh
 npm run cqlsh        # abre cqlsh
 ```
 
-### Modo alternativo — bancos na nuvem (zero Docker)
+### Modo cloud — **modo testado em produção** (recomendado)
 
-Se sua máquina **não tem virtualização habilitada na BIOS** ou tem **menos
-de 8 GB de RAM**, use o **modo cloud**: os 3 bancos rodam em free tiers
-(Supabase + MongoDB Atlas + DataStax Astra) e só os 4 serviços Node rodam
-localmente.
+Os 3 bancos rodam em free tiers (Supabase + MongoDB Atlas + DataStax Astra) e
+só os 4 serviços Node rodam localmente. Este é o modo **validado por 12 testes
+e2e passando** contra a stack cloud real.
+
+**Diagramas completos:** [`docs/diagrams.md`](docs/diagrams.md) (arquitetura,
+ER Postgres, modelo Mongo, query-first Cassandra, sequence de pedido, CAP).
+
+**Slide deck:** [`docs/slides.md`](docs/slides.md) (formato Marp — abre em
+qualquer editor Markdown ou exporta PDF com `npx @marp-team/marp-cli`).
 
 **Setup completo passo a passo:** [`docs/cloud-setup.md`](docs/cloud-setup.md).
 
@@ -346,10 +355,42 @@ Resumo:
 1. Criar 3 contas gratuitas (~25 min total)
 2. Preencher `.env` com `DATABASE_URL`, `MONGO_URL`, `ASTRA_BUNDLE_PATH`,
    `ASTRA_APPLICATION_TOKEN`
-3. `npm run dev:local` — sobe os 4 serviços em um terminal só
+3. Aplicar schemas: `npm run atlas:init && npm run astra:init` (Postgres já
+   tem `init.sql` no Supabase SQL Editor)
+4. `npm run dev:local` — sobe os 4 serviços com saídas coloridas
+5. `npm run e2e` — roda o teste end-to-end (12 asserts)
 
 O código é **idêntico** entre os dois modos — apenas a string de conexão muda.
 A persistência poliglota é demonstrada da mesma forma.
+
+### Validação do modo cloud — `npm run e2e`
+
+Saída típica:
+```
+🧪 E2E — Marketplace Polyglot
+
+📡 Health checks
+  clients-service /health... ✔
+  products-service /health... ✔
+  orders-service /health/deep (cascata)... ✔
+
+👥 Postgres (clients)
+  GET /clients retorna seeds... ✔
+
+📦 MongoDB (products) — schema-flexível
+  GET /products?category=vestuario... ✔
+  GET /products?category=livros (attributes diferentes)... ✔
+
+🛒 Cassandra (orders) — fluxo idempotente + LOGGED BATCH
+  POST /orders cria pedido com snapshot e LOGGED BATCH... ✔
+  POST /orders REPLAY (mesma Idem-Key) → mesmo order_id... ✔
+  GET /orders/:id retorna detalhes com snapshot... ✔
+  GET /orders/by-client/:id (query estrela Cassandra)... ✔
+  PATCH /orders/:id/status muda status nas DUAS tabelas... ✔
+  Verifica que GET por client reflete novo status... ✔
+
+📊 Resultado: ✔ 12 passes, ✗ 0 fails
+```
 
 ---
 
