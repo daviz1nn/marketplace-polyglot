@@ -1,3 +1,8 @@
+// Força DNS Google ANTES de qualquer import que possa abrir conexão.
+// Necessário em redes que não resolvem SRV records do MongoDB Atlas.
+import * as dns from 'node:dns';
+dns.setServers(['8.8.8.8', '1.1.1.1']);
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';

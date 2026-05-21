@@ -28,7 +28,8 @@
     "dev:products": "npm --workspace products-service run start:dev",
     "dev:orders": "npm --workspace orders-service run start:dev",
     "dev:frontend": "npm --workspace frontend run dev",
-    "astra:init": "node infra/cassandra/apply-astra-init.js"
+    "astra:init": "node infra/cassandra/apply-astra-init.js",
+    "atlas:init": "node infra/mongo/apply-atlas-init.js"
   },
   "devDependencies": {
     "cassandra-driver": "^4.7.2",
