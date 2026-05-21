@@ -27,10 +27,13 @@
     "dev:clients": "npm --workspace clients-service run start:dev",
     "dev:products": "npm --workspace products-service run start:dev",
     "dev:orders": "npm --workspace orders-service run start:dev",
-    "dev:frontend": "npm --workspace frontend run dev"
+    "dev:frontend": "npm --workspace frontend run dev",
+    "astra:init": "node infra/cassandra/apply-astra-init.js"
   },
   "devDependencies": {
-    "concurrently": "^9.0.1"
+    "cassandra-driver": "^4.7.2",
+    "concurrently": "^9.0.1",
+    "dotenv": "^16.4.5"
   },
   "engines": {
     "node": ">=22.0.0",
