@@ -1,7 +1,12 @@
-// Força DNS Google ANTES de qualquer import que possa abrir conexão.
-// Necessário em redes que não resolvem SRV records / DNS de cloud DBs.
+import './load-env'; // precisa ser o 1º import
+// DNS customizado OPCIONAL, aplicado ANTES de qualquer import que abra conexão.
+// Útil em redes que não resolvem o DNS de bancos cloud (ex.: Astra).
+// Ex.: DNS_SERVERS=8.8.8.8,1.1.1.1. Sem a variável, usa o DNS do sistema
+// (o que funciona no Docker e em redes que bloqueiam 8.8.8.8).
 import * as dns from 'node:dns';
-dns.setServers(['8.8.8.8', '1.1.1.1']);
+if (process.env.DNS_SERVERS) {
+  dns.setServers(process.env.DNS_SERVERS.split(',').map((s) => s.trim()).filter(Boolean));
+}
 
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';

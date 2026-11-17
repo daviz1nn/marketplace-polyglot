@@ -95,10 +95,11 @@ para máquinas com pouca RAM ou sem virtualização habilitada.
 
 ## 4. Rodar tudo
 
-Com o `.env` configurado:
+Com o `.env` configurado (na raiz do repositório; os serviços o leem de lá):
 
 ```bash
-cd C:\claude\PROJETO-TUNNING-DE-DADOS
+cd marketplace-polyglot
+npm install
 npm run dev:local
 ```
 

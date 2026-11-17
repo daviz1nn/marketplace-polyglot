@@ -6,13 +6,34 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseClients", "value": "http://localhost:3001" },
-    { "key": "baseProducts", "value": "http://localhost:3002" },
-    { "key": "baseOrders", "value": "http://localhost:3003" },
-    { "key": "clientId", "value": "11111111-1111-1111-1111-111111111111" },
-    { "key": "productId", "value": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1" },
-    { "key": "orderId", "value": "" },
-    { "key": "idemKey", "value": "{{$guid}}" }
+    {
+      "key": "baseClients",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "baseProducts",
+      "value": "http://localhost:3002"
+    },
+    {
+      "key": "baseOrders",
+      "value": "http://localhost:3003"
+    },
+    {
+      "key": "clientId",
+      "value": "11111111-1111-1111-1111-111111111111"
+    },
+    {
+      "key": "productId",
+      "value": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "idemKey",
+      "value": "{{$guid}}"
+    }
   ],
   "item": [
     {
@@ -20,15 +41,49 @@
       "item": [
         {
           "name": "GET clients-service /health",
-          "request": { "method": "GET", "url": { "raw": "{{baseClients}}/health", "host": ["{{baseClients}}"], "path": ["health"] } }
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseClients}}/health",
+              "host": [
+                "{{baseClients}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
         },
         {
           "name": "GET products-service /health",
-          "request": { "method": "GET", "url": { "raw": "{{baseProducts}}/health", "host": ["{{baseProducts}}"], "path": ["health"] } }
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseProducts}}/health",
+              "host": [
+                "{{baseProducts}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
         },
         {
           "name": "GET orders-service /health/deep",
-          "request": { "method": "GET", "url": { "raw": "{{baseOrders}}/health/deep", "host": ["{{baseOrders}}"], "path": ["health", "deep"] } }
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseOrders}}/health/deep",
+              "host": [
+                "{{baseOrders}}"
+              ],
+              "path": [
+                "health",
+                "deep"
+              ]
+            }
+          }
         }
       ]
     },
@@ -39,21 +94,100 @@
           "name": "POST /clients",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Diego Pinto\",\n  \"email\": \"diego@example.com\",\n  \"cpf\": \"45678901234\",\n  \"phone\": \"+5511999990004\",\n  \"address\": { \"street\": \"Rua D\", \"number\": \"99\", \"city\": \"Curitiba\", \"state\": \"PR\", \"zip\": \"80000-000\" }\n}"
             },
-            "url": { "raw": "{{baseClients}}/clients", "host": ["{{baseClients}}"], "path": ["clients"] }
+            "url": {
+              "raw": "{{baseClients}}/clients",
+              "host": [
+                "{{baseClients}}"
+              ],
+              "path": [
+                "clients"
+              ]
+            }
           }
         },
         {
           "name": "GET /clients",
-          "request": { "method": "GET", "url": { "raw": "{{baseClients}}/clients", "host": ["{{baseClients}}"], "path": ["clients"] } }
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseClients}}/clients",
+              "host": [
+                "{{baseClients}}"
+              ],
+              "path": [
+                "clients"
+              ]
+            }
+          }
         },
         {
           "name": "GET /clients/{{clientId}}",
-          "request": { "method": "GET", "url": { "raw": "{{baseClients}}/clients/{{clientId}}", "host": ["{{baseClients}}"], "path": ["clients", "{{clientId}}"] } }
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseClients}}/clients/{{clientId}}",
+              "host": [
+                "{{baseClients}}"
+              ],
+              "path": [
+                "clients",
+                "{{clientId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PUT /clients/{{clientId}}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseClients}}/clients/{{clientId}}",
+              "host": [
+                "{{baseClients}}"
+              ],
+              "path": [
+                "clients",
+                "{{clientId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nome atualizado\",\n  \"phone\": \"+5511988887777\"\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE /clients/{{clientId}}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseClients}}/clients/{{clientId}}",
+              "host": [
+                "{{baseClients}}"
+              ],
+              "path": [
+                "clients",
+                "{{clientId}}"
+              ]
+            }
+          }
         }
       ]
     },
@@ -64,12 +198,25 @@
           "name": "POST /products",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Mochila Urban Pro\",\n  \"description\": \"Mochila com compartimento para notebook\",\n  \"category\": \"acessorios\",\n  \"price\": 159.90,\n  \"stock\": 30,\n  \"attributes\": { \"capacidade_litros\": 25, \"cor\": \"preto\", \"impermeavel\": true }\n}"
             },
-            "url": { "raw": "{{baseProducts}}/products", "host": ["{{baseProducts}}"], "path": ["products"] }
+            "url": {
+              "raw": "{{baseProducts}}/products",
+              "host": [
+                "{{baseProducts}}"
+              ],
+              "path": [
+                "products"
+              ]
+            }
           }
         },
         {
@@ -78,9 +225,18 @@
             "method": "GET",
             "url": {
               "raw": "{{baseProducts}}/products?category=vestuario",
-              "host": ["{{baseProducts}}"],
-              "path": ["products"],
-              "query": [{ "key": "category", "value": "vestuario" }]
+              "host": [
+                "{{baseProducts}}"
+              ],
+              "path": [
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "vestuario"
+                }
+              ]
             }
           }
         },
@@ -88,12 +244,86 @@
           "name": "PATCH /products/{{productId}}/stock (atomic)",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{ \"delta\": -1 }" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"delta\": -1 }"
+            },
             "url": {
               "raw": "{{baseProducts}}/products/{{productId}}/stock",
-              "host": ["{{baseProducts}}"],
-              "path": ["products", "{{productId}}", "stock"]
+              "host": [
+                "{{baseProducts}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}",
+                "stock"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /products/{{productId}}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseProducts}}/products/{{productId}}",
+              "host": [
+                "{{baseProducts}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PUT /products/{{productId}}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseProducts}}/products/{{productId}}",
+              "host": [
+                "{{baseProducts}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 59.9,\n  \"attributes\": {\n    \"tamanho\": \"G\",\n    \"cor\": \"verde\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE /products/{{productId}}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseProducts}}/products/{{productId}}",
+              "host": [
+                "{{baseProducts}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}"
+              ]
             }
           }
         }
@@ -119,14 +349,28 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "{{idemKey}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idemKey}}"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"client_id\": \"{{clientId}}\",\n  \"items\": [\n    { \"product_id\": \"{{productId}}\", \"quantity\": 2 }\n  ]\n}"
             },
-            "url": { "raw": "{{baseOrders}}/orders", "host": ["{{baseOrders}}"], "path": ["orders"] }
+            "url": {
+              "raw": "{{baseOrders}}/orders",
+              "host": [
+                "{{baseOrders}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
           }
         },
         {
@@ -134,19 +378,45 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "{{idemKey}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idemKey}}"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"client_id\": \"{{clientId}}\",\n  \"items\": [\n    { \"product_id\": \"{{productId}}\", \"quantity\": 2 }\n  ]\n}"
             },
-            "url": { "raw": "{{baseOrders}}/orders", "host": ["{{baseOrders}}"], "path": ["orders"] }
+            "url": {
+              "raw": "{{baseOrders}}/orders",
+              "host": [
+                "{{baseOrders}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
           }
         },
         {
           "name": "GET /orders/{{orderId}}",
-          "request": { "method": "GET", "url": { "raw": "{{baseOrders}}/orders/{{orderId}}", "host": ["{{baseOrders}}"], "path": ["orders", "{{orderId}}"] } }
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseOrders}}/orders/{{orderId}}",
+              "host": [
+                "{{baseOrders}}"
+              ],
+              "path": [
+                "orders",
+                "{{orderId}}"
+              ]
+            }
+          }
         },
         {
           "name": "GET /orders/by-client/{{clientId}} (query estrela)",
@@ -154,9 +424,20 @@
             "method": "GET",
             "url": {
               "raw": "{{baseOrders}}/orders/by-client/{{clientId}}?limit=20",
-              "host": ["{{baseOrders}}"],
-              "path": ["orders", "by-client", "{{clientId}}"],
-              "query": [{ "key": "limit", "value": "20" }]
+              "host": [
+                "{{baseOrders}}"
+              ],
+              "path": [
+                "orders",
+                "by-client",
+                "{{clientId}}"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
             }
           }
         },
@@ -164,12 +445,70 @@
           "name": "PATCH /orders/{{orderId}}/status",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{ \"status\": \"paid\" }" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"paid\" }"
+            },
             "url": {
               "raw": "{{baseOrders}}/orders/{{orderId}}/status",
-              "host": ["{{baseOrders}}"],
-              "path": ["orders", "{{orderId}}", "status"]
+              "host": [
+                "{{baseOrders}}"
+              ],
+              "path": [
+                "orders",
+                "{{orderId}}",
+                "status"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /orders/{{orderId}}/status (canceled → devolve estoque)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseOrders}}/orders/{{orderId}}/status",
+              "host": [
+                "{{baseOrders}}"
+              ],
+              "path": [
+                "orders",
+                "{{orderId}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"canceled\"\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE /orders/{{orderId}}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseOrders}}/orders/{{orderId}}",
+              "host": [
+                "{{baseOrders}}"
+              ],
+              "path": [
+                "orders",
+                "{{orderId}}"
+              ]
             }
           }
         }

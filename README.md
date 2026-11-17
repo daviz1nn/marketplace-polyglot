@@ -7,15 +7,26 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791.svg)](https://www.postgresql.org/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8-47A248.svg)](https://www.mongodb.com/)
 [![Cassandra](https://img.shields.io/badge/Cassandra-5.0-1287B1.svg)](https://cassandra.apache.org/)
-[![E2E](https://img.shields.io/badge/e2e-12%2F12_passing-brightgreen.svg)](scripts/e2e-test.js)
 
 > Aplicação acadêmica que materializa o conceito de **Polyglot Persistence**
 > (Sadalage & Fowler, 2012): cada agregado é persistido no banco cujo modelo se
 > alinha ao **padrão de acesso da aplicação**.
 
-> **Status:** Fase 1 entregue, executando em produção real via 3 free tiers
-> cloud (Supabase + MongoDB Atlas + DataStax Astra). Todos os 12 testes
-> end-to-end passando (`npm run e2e`).
+> **Status:** Fase 1 (proposta) entregue. Fase 2 (implementação): CRUD completo
+> nos três serviços, saga com compensação de estoque no fluxo de pedido e
+> teste end-to-end com 25 verificações (`npm run e2e`) que roda tanto no modo
+> Docker quanto no modo cloud.
+
+### Checklist do enunciado
+
+| Exigência (`projeto.md`) | Onde está |
+|---|---|
+| RDB relacional | PostgreSQL 17 → clientes ([§3.1](#31-clientes--postgresql)) |
+| DB1 e DB2 NoSQL e diferentes entre si | MongoDB 8 (document) → produtos; Cassandra 5 (wide-column) → pedidos |
+| BE com **todas** as operações de CRUD | 3 serviços NestJS: `POST/GET/PUT/DELETE` em clientes e produtos; `POST/GET/PATCH/DELETE` em pedidos ([§10](#10-endpoints-e-swagger)) |
+| FE que faz requisições ao BE | React 19 + Vite: telas de clientes, produtos, checkout e histórico de pedidos |
+| README: tema, justificativa de cada banco, como o BE é implementado, como executar | [§1](#1-tema-escolhido), [§3](#3-justificativa-de-cada-banco)–[§4](#4-decisões-negativas--por-que-não-outras-combinações), [§6](#6-arquitetura)–[§7](#7-fluxo-de-criação-de-pedido), [§9](#9-como-executar--do-zero) |
+| Recursos para rodar num ambiente sem execução prévia | `docker compose up --build` sobe bancos, schemas, seeds, serviços e FE ([§9](#9-como-executar--do-zero)) |
 
 ---
 
@@ -216,7 +227,7 @@ sequenceDiagram
     OS->>CA: SELECT FROM orders_by_idem_key
     alt já existe
         CA-->>OS: order_id existente
-        OS-->>FE: 200 (idempotent replay)
+        OS-->>FE: 201 com o MESMO pedido (idempotent replay)
     else nova requisição
         OS->>CS: GET /clients/:id
         CS-->>OS: cliente OK (ou 404)
@@ -226,10 +237,15 @@ sequenceDiagram
             MO-->>PS: doc ou null (estoque insuficiente)
             PS-->>OS: 200 ou 409
         end
-        OS->>OS: monta snapshot + calcula total
-        OS->>CA: BEGIN BATCH<br/>INSERT orders<br/>INSERT orders_by_client<br/>INSERT orders_by_idem_key<br/>APPLY BATCH
-        CA-->>OS: OK
-        OS-->>FE: 201 {order_id, total, status}
+        alt algum item falhou (404/409) ou o BATCH falhou
+            OS->>PS: PATCH /products/:id/stock {delta:+qty} (compensação dos itens já reservados)
+            OS-->>FE: 404 / 409 / 5xx
+        else tudo OK
+            OS->>OS: monta snapshot + calcula total
+            OS->>CA: BEGIN BATCH<br/>INSERT orders<br/>INSERT orders_by_client<br/>INSERT orders_by_idem_key<br/>APPLY BATCH
+            CA-->>OS: OK
+            OS-->>FE: 201 {order_id, total, status}
+        end
     end
 ```
 
@@ -242,6 +258,15 @@ sequenceDiagram
 - **Snapshot histórico** — `client_name`, `product_name`, `unit_price` são
   copiados no momento do pedido (correto contabilmente — se o cliente mudar o
   nome depois, a nota fiscal original não muda).
+- **Saga com compensação** — o pedido envolve dois bancos (Mongo e Cassandra)
+  sem transação distribuída. Se o 2º item não tiver estoque, ou se o BATCH no
+  Cassandra falhar, o `orders-service` devolve (`delta:+qty`) o estoque dos
+  itens que já tinham sido reservados.
+- **Cancelar ou excluir devolve estoque** — `PATCH status=canceled` e
+  `DELETE /orders/:id` devolvem o estoque quando o pedido estava `pending` ou
+  `paid` (mercadoria ainda não saiu). Pedido cancelado não volta a outro status.
+- **Idempotência também no FE** — o checkout gera uma `Idempotency-Key` por
+  carrinho; um duplo clique ou retry reenvia a mesma chave e não duplica o pedido.
 
 ---
 
@@ -302,11 +327,16 @@ Duas tabelas denormalizadas + tabela de idempotência. Schema completo em
 
 ## 9. Como executar — do zero
 
-> 🎯 **Para o avaliador:** o projeto suporta **2 modos de execução**. O modo
-> **cloud** é o **validado** (12/12 testes e2e passando contra a stack real).
-> O modo Docker existe como referência mas requer Docker Desktop com
-> virtualização BIOS habilitada (~8 GB RAM) — escolha o que for mais
-> conveniente.
+> 🎯 **Para o avaliador:** o projeto suporta **2 modos de execução** com o
+> **mesmo código** (só a string de conexão muda):
+>
+> - **Modo 1 — Docker Compose (recomendado para avaliar):** um comando sobe os
+>   3 bancos, aplica schemas e seeds, e sobe os 3 serviços e o frontend. Não
+>   precisa de conta em nenhum serviço externo.
+> - **Modo 2 — Cloud:** os bancos rodam em free tiers (Supabase, Atlas, Astra)
+>   e só os serviços Node rodam localmente. Útil em máquinas sem Docker.
+>
+> Em qualquer modo, `npm run e2e` valida o sistema inteiro (25 verificações).
 
 ### Modo 1 — Docker Compose (sobe tudo local em 1 comando)
 
@@ -333,6 +363,17 @@ Quando todos os healthchecks passarem:
 - **Swagger products-service:** http://localhost:3002/docs
 - **Swagger orders-service:** http://localhost:3003/docs
 
+Para validar tudo de uma vez (precisa só do Node 22+ no host, sem `npm install`):
+
+```bash
+npm run e2e
+```
+
+> **Windows:** o repositório tem um `.gitattributes` que força quebras de linha
+> LF. Isso é necessário porque o `infra/cassandra/wait-and-init.sh` roda dentro
+> de um container Linux e quebraria com CRLF (`core.autocrlf=true`, padrão do
+> Git for Windows).
+
 ### Atalhos via npm
 
 ```bash
@@ -345,11 +386,11 @@ npm run mongosh      # abre mongosh
 npm run cqlsh        # abre cqlsh
 ```
 
-### Modo 2 — Cloud (modo testado em produção, recomendado)
+### Modo 2 — Cloud (bancos em free tier, sem Docker)
 
 Os 3 bancos rodam em free tiers (Supabase + MongoDB Atlas + DataStax Astra) e
-só os 4 serviços Node rodam localmente. Este é o modo **validado por 12 testes
-e2e passando** contra a stack cloud real.
+só os 4 serviços Node rodam localmente. Os serviços leem o `.env` da **raiz**
+do repositório (ver `services/*/src/load-env.ts`).
 
 **Diagramas completos:** [`docs/diagrams.md`](docs/diagrams.md) (arquitetura,
 ER Postgres, modelo Mongo, query-first Cassandra, sequence de pedido, CAP).
@@ -365,40 +406,27 @@ Resumo:
    `ASTRA_APPLICATION_TOKEN`
 3. Aplicar schemas: `npm run atlas:init && npm run astra:init` (Postgres já
    tem `init.sql` no Supabase SQL Editor)
-4. `npm run dev:local` — sobe os 4 serviços com saídas coloridas
-5. `npm run e2e` — roda o teste end-to-end (12 asserts)
+4. `npm install` e `npm run dev:local` — sobe os 4 serviços com saídas coloridas
+5. `npm run e2e` — roda o teste end-to-end
 
-O código é **idêntico** entre os dois modos — apenas a string de conexão muda.
-A persistência poliglota é demonstrada da mesma forma.
+> Se a sua rede não resolver o endereço `mongodb+srv://` do Atlas, defina
+> `DNS_SERVERS=8.8.8.8,1.1.1.1` no `.env`. Não use essa variável no modo
+> Docker: os nomes dos containers (`cassandra`, `clients-service`…) só são
+> resolvidos pelo DNS interno do Docker.
 
-### Validação do modo cloud — `npm run e2e`
+### O que o `npm run e2e` verifica (25 passos)
 
-Saída típica:
-```
-🧪 E2E — Marketplace Polyglot
+| Bloco | Verificações |
+|---|---|
+| Health | os 3 serviços e a cascata `orders → clients/products` |
+| Postgres (clientes) | seeds; `POST` cria; e-mail repetido → **409** pelo `UNIQUE`; `PUT` atualiza |
+| MongoDB (produtos) | filtro por categoria; `attributes` diferentes por categoria; `POST` com atributos livres; `PUT` atualiza preço |
+| Cassandra (pedidos) | `POST` com snapshot e `LOGGED BATCH`; replay idempotente; `GET` por id; histórico por cliente; `PATCH` de status refletido nas duas tabelas |
+| Saga e estoque | item sem estoque → **409** e estoque do 1º item devolvido; pedido baixa estoque; status inválido → **400**; cancelar devolve estoque; `DELETE` remove das duas tabelas e devolve estoque |
+| Limpeza | `DELETE` do produto e do cliente criados (204 e depois 404) |
 
-📡 Health checks
-  clients-service /health... ✔
-  products-service /health... ✔
-  orders-service /health/deep (cascata)... ✔
-
-👥 Postgres (clients)
-  GET /clients retorna seeds... ✔
-
-📦 MongoDB (products) — schema-flexível
-  GET /products?category=vestuario... ✔
-  GET /products?category=livros (attributes diferentes)... ✔
-
-🛒 Cassandra (orders) — fluxo idempotente + LOGGED BATCH
-  POST /orders cria pedido com snapshot e LOGGED BATCH... ✔
-  POST /orders REPLAY (mesma Idem-Key) → mesmo order_id... ✔
-  GET /orders/:id retorna detalhes com snapshot... ✔
-  GET /orders/by-client/:id (query estrela Cassandra)... ✔
-  PATCH /orders/:id/status muda status nas DUAS tabelas... ✔
-  Verifica que GET por client reflete novo status... ✔
-
-📊 Resultado: ✔ 12 passes, ✗ 0 fails
-```
+O teste cria os próprios dados (com sufixo único), então pode rodar quantas
+vezes quiser no mesmo banco.
 
 ---
 
@@ -433,7 +461,8 @@ Cada serviço expõe Swagger UI em `/docs`. Resumo:
 | POST   | `/orders` (header `Idempotency-Key`) |
 | GET    | `/orders/:id`                     |
 | GET    | `/orders/by-client/:client_id`    |
-| PATCH  | `/orders/:id/status`              |
+| PATCH  | `/orders/:id/status` (`canceled` devolve estoque) |
+| DELETE | `/orders/:id` (BATCH nas 2 tabelas + devolve estoque) |
 | GET    | `/health`                         |
 | GET    | `/health/deep`                    |
 
@@ -480,8 +509,13 @@ docker compose exec cassandra cqlsh -e \
 # 7) Histórico do cliente (a query estrela do Cassandra)
 curl "http://localhost:3003/orders/by-client/<client_id>?limit=20"
 
-# 8) FE end-to-end
+# 8) Excluir o pedido → some das DUAS tabelas e o estoque volta no Mongo
+curl -X DELETE http://localhost:3003/orders/<order_id>
+curl http://localhost:3002/products/<product_id>     # stock voltou
+
+# 9) FE end-to-end
 # http://localhost:5173 → /clients → /products → /checkout → /clients/:id/orders
+# (no histórico dá para mudar o status e excluir o pedido)
 ```
 
 ---
@@ -505,9 +539,13 @@ curl "http://localhost:3003/orders/by-client/<client_id>?limit=20"
 ## 13. Limitações e trabalhos futuros
 
 **Limitações conhecidas (documentadas):**
-- **Saga simples** — se o `LOGGED BATCH` no Cassandra falhar depois do estoque
-  já ter sido decrementado no Mongo, há inconsistência. Mitigação seria
-  rollback compensatório (out of scope acadêmico).
+- **Compensação não é durável** — a saga devolve o estoque quando o pedido
+  falha, mas a compensação roda em memória: se o `products-service` cair
+  exatamente nesse momento, a devolução é só logada (`falha ao devolver
+  estoque`). Um outbox/fila com retry resolveria.
+- **Sem listagem global de pedidos** — de propósito. Listar todos os pedidos
+  exigiria varrer todas as partições do Cassandra (anti-padrão); a leitura é
+  sempre por `order_id` ou por cliente (`orders_by_client`).
 - **Sem autenticação** — fora do escopo do enunciado, que pede CRUD aberto.
 - **Sem paginação cursor-based** no listing de produtos (skip/limit suficiente).
 - **`cassandra-init` é container separado**, não roda como `init container` —
@@ -517,24 +555,31 @@ curl "http://localhost:3003/orders/by-client/<client_id>?limit=20"
 - Substituir REST síncrono por eventos (RabbitMQ/Kafka) para desacoplamento.
 - Adicionar cache (Redis) na frente do products-service.
 - Observabilidade (Prometheus + Grafana).
-- Saga pattern formalizado para o fluxo de pedido.
+- Saga orquestrada com outbox (compensação durável) para o fluxo de pedido.
 
 ---
 
 ## 14. Estrutura do repositório
 
 ```
-PROJETO-TUNNING-DE-DADOS/
+marketplace-polyglot/
 ├── README.md                              # este arquivo
-├── docker-compose.yml
+├── docker-compose.yml                     # modo 1: sobe tudo
 ├── package.json                           # npm workspaces + scripts
+├── package-lock.json                      # lockfile único (workspaces)
 ├── .env.example
+├── .gitattributes                         # força LF (scripts .sh nos containers)
 ├── projeto.md                             # enunciado original
 ├── CHANGELOG.md  LICENSE  .gitignore  .editorconfig  .prettierrc
+├── .github/workflows/ci.yml               # build + testes + docker build
 ├── docs/
 │   ├── data-model.md                      # modelagem detalhada e justificada
 │   ├── stack-rationale.md                 # Prisma/Mongoose/cassandra-driver
+│   ├── diagrams.md                        # diagramas Mermaid
+│   ├── slides.md                          # deck da apresentação (Marp)
+│   ├── cloud-setup.md                     # modo 2 passo a passo
 │   └── marketplace.postman_collection.json
+├── scripts/e2e-test.js                    # teste end-to-end (npm run e2e)
 ├── services/
 │   ├── clients-service/                   # NestJS + Prisma + Postgres
 │   ├── products-service/                  # NestJS + Mongoose + Mongo
@@ -542,8 +587,8 @@ PROJETO-TUNNING-DE-DADOS/
 ├── frontend/                              # Vite + React 19 + TS + Tailwind
 └── infra/
     ├── postgres/init.sql
-    ├── mongo/init.js
-    └── cassandra/init.cql
+    ├── mongo/init.js  apply-atlas-init.js
+    └── cassandra/init.cql  wait-and-init.sh  apply-astra-init.js
 ```
 
 ---

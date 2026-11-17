@@ -1,3 +1,4 @@
+import './load-env'; // precisa ser o 1º import
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';

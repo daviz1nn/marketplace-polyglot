@@ -1,6 +1,8 @@
 import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client } from 'cassandra-driver';
+import { existsSync } from 'node:fs';
+import { isAbsolute, resolve } from 'node:path';
 
 @Injectable()
 export class CassandraService implements OnModuleInit, OnModuleDestroy {
@@ -19,9 +21,15 @@ export class CassandraService implements OnModuleInit, OnModuleDestroy {
     // ----- Modo CLOUD (DataStax Astra DB) -----
     // Ativado quando ASTRA_BUNDLE_PATH e ASTRA_APPLICATION_TOKEN existem.
     if (astraBundle && astraToken) {
-      connectionLabel = `Astra DB (bundle=${astraBundle}, keyspace=${keyspace})`;
+      // O .env usa caminho relativo à raiz do repo; em `dev:local` o cwd é a
+      // pasta do serviço, então tentamos os dois.
+      const bundlePath = isAbsolute(astraBundle)
+        ? astraBundle
+        : ([resolve(astraBundle), resolve('../..', astraBundle)].find((p) => existsSync(p)) ??
+          resolve(astraBundle));
+      connectionLabel = `Astra DB (bundle=${bundlePath}, keyspace=${keyspace})`;
       this._client = new Client({
-        cloud: { secureConnectBundle: astraBundle },
+        cloud: { secureConnectBundle: bundlePath },
         credentials: { username: 'token', password: astraToken },
         keyspace,
       });

@@ -1,0 +1,7 @@
+# Força LF em todos os arquivos de texto, inclusive em clones no Windows
+# (core.autocrlf=true). Sem isso, os scripts .sh montados nos containers
+# Linux quebram com CRLF ("set: Illegal option -").
+* text=auto eol=lf
+*.sh text eol=lf
+*.zip binary
+*.png binary

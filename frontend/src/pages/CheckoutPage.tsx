@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ClientsApi } from '../api/clients';
@@ -21,6 +22,11 @@ export default function CheckoutPage() {
   const [clientId, setClientId] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [lastOrderId, setLastOrderId] = useState<string | null>(null);
+  // Uma Idempotency-Key por "carrinho": repetir o clique (ou um retry após
+  // timeout) reenvia a MESMA chave e o backend devolve o mesmo pedido em vez de
+  // criar outro. Qualquer mudança no cliente ou no carrinho gera chave nova.
+  const [idemKey, setIdemKey] = useState(() => uuidv4());
+  useEffect(() => setIdemKey(uuidv4()), [clientId, cart]);
 
   // Toca os 3 serviços nesta tela — demonstração viva da polyglot persistence
   const clientsQ = useQuery({ queryKey: ['clients'], queryFn: ClientsApi.list });
@@ -28,10 +34,13 @@ export default function CheckoutPage() {
 
   const mutation = useMutation({
     mutationFn: () =>
-      OrdersApi.create({
-        client_id: clientId,
-        items: cart.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
-      }),
+      OrdersApi.create(
+        {
+          client_id: clientId,
+          items: cart.map((i) => ({ product_id: i.product_id, quantity: i.quantity })),
+        },
+        idemKey,
+      ),
     onSuccess: (order) => {
       setLastOrderId(order.order_id);
       setCart([]);

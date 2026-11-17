@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsString,
@@ -42,9 +43,13 @@ export class CreateOrderDto {
   items!: OrderItemInputDto[];
 }
 
+export const ORDER_STATUSES = ['pending', 'paid', 'shipped', 'delivered', 'canceled'] as const;
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
+
 export class UpdateStatusDto {
-  @ApiProperty({ enum: ['pending', 'paid', 'shipped', 'delivered', 'canceled'] })
+  @ApiProperty({ enum: ORDER_STATUSES })
   @IsString()
   @IsNotEmpty()
-  status!: string;
+  @IsIn(ORDER_STATUSES, { message: `status deve ser um de: ${ORDER_STATUSES.join(', ')}` })
+  status!: OrderStatus;
 }

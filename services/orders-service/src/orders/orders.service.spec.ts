@@ -8,6 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { of, throwError } from 'rxjs';
+import { types } from 'cassandra-driver';
 import { OrdersService } from './orders.service';
 import { CassandraService } from '../cassandra/cassandra.service';
 
@@ -194,5 +195,132 @@ describe('OrdersService — fluxo crítico', () => {
     expect(httpMock.patch).not.toHaveBeenCalled();
     // Resultado é o pedido existente
     expect(result.order_id).toBe('00000000-0000-0000-0000-000000000001');
+  });
+
+  // ---------------------------------------------------------------------
+  // Saga com compensação
+  // ---------------------------------------------------------------------
+  const CLIENT_OK = {
+    data: { id: '11111111-1111-1111-1111-111111111111', name: 'Ana', email: 'ana@example.com' },
+  };
+  const PRODUCT_A = {
+    data: { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', name: 'Camiseta', price: 49.9, stock: 10 },
+  };
+
+  it('devolve o estoque do 1º item quando o 2º item falha por estoque insuficiente', async () => {
+    httpMock.get.mockReturnValue(of(CLIENT_OK));
+    httpMock.patch
+      .mockReturnValueOnce(of(PRODUCT_A)) // reserva item 1
+      .mockReturnValueOnce(throwError(() => ({ response: { status: 409 } }))) // item 2 falha
+      .mockReturnValueOnce(of(PRODUCT_A)); // compensação do item 1
+
+    await expect(
+      service.create(
+        {
+          client_id: '11111111-1111-1111-1111-111111111111',
+          items: [
+            { product_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', quantity: 3 },
+            { product_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1', quantity: 999 },
+          ],
+        },
+        'idem-saga',
+        'corr-1',
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(httpMock.patch).toHaveBeenCalledTimes(3);
+    const [url, body] = httpMock.patch.mock.calls[2];
+    expect(url).toBe('http://p/products/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1/stock');
+    expect(body).toEqual({ delta: 3 });
+    expect(clientMock.batch).not.toHaveBeenCalled();
+  });
+
+  it('devolve o estoque quando o LOGGED BATCH no Cassandra falha', async () => {
+    httpMock.get.mockReturnValue(of(CLIENT_OK));
+    httpMock.patch.mockReturnValue(of(PRODUCT_A));
+    clientMock.batch.mockRejectedValueOnce(new Error('WriteTimeout'));
+
+    await expect(
+      service.create(
+        {
+          client_id: '11111111-1111-1111-1111-111111111111',
+          items: [{ product_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', quantity: 2 }],
+        },
+        'idem-batch-fail',
+        'corr-1',
+      ),
+    ).rejects.toThrow('WriteTimeout');
+
+    expect(httpMock.patch).toHaveBeenCalledTimes(2);
+    expect(httpMock.patch.mock.calls[1][1]).toEqual({ delta: 2 });
+  });
+
+  // ---------------------------------------------------------------------
+  // Update de status e DELETE
+  // ---------------------------------------------------------------------
+  const ORDER_ID = types.TimeUuid.now().toString();
+  const orderRow = (status: string) => {
+    const row = {
+      order_id: { toString: () => ORDER_ID },
+      client_id: { toString: () => '11111111-1111-1111-1111-111111111111' },
+      status,
+      total: { toString: () => '99.80' },
+      client_snapshot: null,
+      items: [
+        {
+          product_id: { toString: () => 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1' },
+          name: 'Camiseta',
+          unit_price: { toString: () => '49.90' },
+          quantity: 2,
+        },
+      ],
+    };
+    return { rowLength: 1, rows: [row], first: () => row };
+  };
+
+  it('DELETE de pedido pending remove das 2 tabelas e devolve estoque', async () => {
+    clientMock.execute.mockResolvedValueOnce(orderRow('pending'));
+    httpMock.patch.mockReturnValue(of(PRODUCT_A));
+
+    await service.remove(ORDER_ID, 'corr-del');
+
+    const [queries, opts] = clientMock.batch.mock.calls[0];
+    expect(queries).toHaveLength(2);
+    expect(queries[0].query).toContain('DELETE FROM orders');
+    expect(queries[1].query).toContain('DELETE FROM orders_by_client');
+    expect(opts.logged).toBe(true);
+    expect(httpMock.patch).toHaveBeenCalledWith(
+      'http://p/products/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1/stock',
+      { delta: 2 },
+      expect.anything(),
+    );
+  });
+
+  it('DELETE de pedido delivered não devolve estoque', async () => {
+    clientMock.execute.mockResolvedValueOnce(orderRow('delivered'));
+    await service.remove(ORDER_ID, 'corr-del');
+    expect(clientMock.batch).toHaveBeenCalledTimes(1);
+    expect(httpMock.patch).not.toHaveBeenCalled();
+  });
+
+  it('DELETE de pedido inexistente retorna 404', async () => {
+    await expect(service.remove(ORDER_ID)).rejects.toBeInstanceOf(NotFoundException);
+    expect(clientMock.batch).not.toHaveBeenCalled();
+  });
+
+  it('cancelar pedido pending devolve estoque', async () => {
+    clientMock.execute.mockResolvedValueOnce(orderRow('pending'));
+    httpMock.patch.mockReturnValue(of(PRODUCT_A));
+    const result = await service.updateStatus(ORDER_ID, 'canceled');
+    expect(result.status).toBe('canceled');
+    expect(httpMock.patch.mock.calls[0][1]).toEqual({ delta: 2 });
+  });
+
+  it('não permite reabrir pedido cancelado', async () => {
+    clientMock.execute.mockResolvedValueOnce(orderRow('canceled'));
+    await expect(service.updateStatus(ORDER_ID, 'paid')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(clientMock.batch).not.toHaveBeenCalled();
   });
 });
