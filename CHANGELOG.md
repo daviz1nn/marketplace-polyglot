@@ -5,6 +5,37 @@ Todas as mudanças notáveis deste projeto serão documentadas aqui.
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto adere ao [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-11-16
+
+### Added
+- `DELETE /orders/:id`: remove o pedido de `orders` e `orders_by_client` num
+  `LOGGED BATCH` e devolve o estoque se o pedido estava `pending`/`paid`. Com
+  isso o CRUD fica completo nos três serviços, como pede o enunciado.
+- Saga com compensação no `POST /orders`: se um item falhar (404/409) ou o
+  BATCH no Cassandra falhar, o estoque já reservado é devolvido ao Mongo.
+- `PATCH /orders/:id/status` com `canceled` devolve o estoque; pedido
+  cancelado não pode voltar a outro status; status validado com `@IsIn` (400).
+- FE: histórico de pedidos permite mudar status e excluir pedido.
+- `npm run e2e` cobre CRUD de clientes e produtos, saga, cancelamento e DELETE
+  (25 verificações); 7 novos testes unitários no `orders-service`.
+- Postman: `PUT`/`DELETE` de clientes e produtos, `DELETE` de pedidos.
+- `.gitattributes` forçando LF.
+
+### Fixed
+- Modo Docker no Windows: com `core.autocrlf=true` o `wait-and-init.sh` era
+  clonado com CRLF e o container `cassandra-init` falhava.
+- `dev:local`: os serviços não liam o `.env` da raiz (o cwd é a pasta do
+  serviço). Agora `load-env.ts` carrega `.env` do serviço e da raiz; o
+  `ASTRA_BUNDLE_PATH` relativo também é resolvido a partir da raiz.
+- DNS do Google deixou de ser forçado em todo boot; agora é opcional via
+  `DNS_SERVERS` (forçar quebrava redes que bloqueiam 8.8.8.8).
+- FE: a `Idempotency-Key` era gerada a cada clique, então duplo clique criava
+  dois pedidos. Agora é uma chave por carrinho.
+- CI: todos os jobs falhavam porque apontavam para lockfiles por serviço que
+  não existem (o repo usa workspaces com um lockfile na raiz). Agora instala
+  na raiz, faz build, roda testes e faz `docker build` de cada imagem.
+- `clients-service/Dockerfile`: instala `openssl`, exigido pelo Prisma no Alpine.
+
 ## [1.0.0] — 2026-05-20 (Fase 2 / entrega final)
 
 ### Added — material de defesa

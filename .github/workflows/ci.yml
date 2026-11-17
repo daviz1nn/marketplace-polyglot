@@ -11,37 +11,42 @@ jobs:
     name: Validate docker-compose
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: docker compose config
-        run: docker compose config
+        run: docker compose config --quiet
 
-  services:
-    name: Build & test (${{ matrix.service }})
+  build-test:
+    name: Build & test (workspaces)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+          # O repo usa npm workspaces: existe UM lockfile, na raiz.
+          cache-dependency-path: package-lock.json
+      - name: Install
+        run: npm ci --legacy-peer-deps
+      - name: Prisma generate (clients-service)
+        run: npx --workspace clients-service prisma generate
+      - name: Build
+        run: npm run build
+      - name: Test
+        run: npm test
+
+  docker-build:
+    name: Docker build (${{ matrix.context }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        service:
+        context:
           - services/clients-service
           - services/products-service
           - services/orders-service
           - frontend
-    defaults:
-      run:
-        working-directory: ${{ matrix.service }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: ${{ matrix.service }}/package-lock.json
-      - name: Install
-        run: npm install --legacy-peer-deps
-      - name: Prisma generate (clients-service only)
-        if: matrix.service == 'services/clients-service'
-        run: npx prisma generate
-      - name: Build
-        run: npm run build --if-present
-      - name: Test
-        run: npm test --if-present
+      - uses: actions/checkout@v5
+      - name: docker build
+        run: docker build ${{ matrix.context }}

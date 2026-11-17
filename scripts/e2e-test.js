@@ -11,11 +11,18 @@
  *   5. POST /orders REPLAY com mesma Idempotency-Key (deve retornar mesmo id)
  *   6. GET /orders/by-client (query estrela do Cassandra)
  *   7. PATCH /orders/:id/status (BATCH coordenado nas 2 tabelas)
+ *   8. CRUD completo de clientes (Postgres) e produtos (Mongo)
+ *   9. Saga: estoque é devolvido quando um item do pedido falha
+ *  10. Cancelamento e DELETE de pedido devolvem estoque
+ *
+ * Funciona nos dois modos (Docker Compose ou dev:local + cloud): só precisa
+ * dos serviços respondendo em localhost:3001/3002/3003.
  *
  * Uso: node scripts/e2e-test.js
  *      ou:  npm run e2e
  */
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 
 const CLIENTS = process.env.CLIENTS_URL || 'http://localhost:3001';
 const PRODUCTS = process.env.PRODUCTS_URL || 'http://localhost:3002';
@@ -29,17 +36,7 @@ let okCount = 0;
 let failCount = 0;
 const failures = [];
 
-function uuid() {
-  return [
-    Math.random().toString(16).slice(2, 10),
-    Math.random().toString(16).slice(2, 6),
-    Math.random().toString(16).slice(2, 6),
-    Math.random().toString(16).slice(2, 6),
-    Math.random().toString(16).slice(2, 14),
-  ]
-    .map((s) => s.padEnd(s.length, '0'))
-    .join('-');
-}
+const uuid = () => crypto.randomUUID();
 
 async function step(name, fn) {
   process.stdout.write(`  ${name}... `);
@@ -54,6 +51,12 @@ async function step(name, fn) {
     failCount++;
   }
 }
+
+const json = (method, body, headers = {}) => ({
+  method,
+  headers: { 'Content-Type': 'application/json', ...headers },
+  body: JSON.stringify(body),
+});
 
 async function fetchJSON(url, init) {
   const res = await fetch(url, init);
@@ -111,6 +114,73 @@ async function fetchJSON(url, init) {
     assert.ok(livro.attributes?.isbn, 'livro deveria ter attributes.isbn');
     assert.ok(livro.attributes?.autor, 'livro deveria ter attributes.autor');
   });
+
+  // Dados únicos por execução — o teste pode rodar várias vezes no mesmo banco.
+  const run = Date.now().toString().slice(-8);
+  let newClientId;
+  let newProductId;
+
+  console.log('\n👥 Postgres (clients) — CRUD');
+  await step('POST /clients cria cliente', async () => {
+    const { status, body } = await fetchJSON(
+      `${CLIENTS}/clients`,
+      json('POST', {
+        name: `E2E ${run}`,
+        email: `e2e-${run}@example.com`,
+        cpf: `900${run}`,
+        address: { street: 'Rua E2E', number: '1', city: 'São Paulo', state: 'SP', zip: '01000-000' },
+      }),
+    );
+    assert.equal(status, 201, JSON.stringify(body));
+    newClientId = body.id;
+  });
+  await step('POST /clients com email repetido → 409 (UNIQUE do Postgres)', async () => {
+    const { status } = await fetchJSON(
+      `${CLIENTS}/clients`,
+      json('POST', {
+        name: 'Duplicado',
+        email: `e2e-${run}@example.com`,
+        cpf: `901${run}`,
+        address: { street: 'Rua E2E', number: '2', city: 'São Paulo', state: 'SP', zip: '01000-000' },
+      }),
+    );
+    assert.equal(status, 409);
+  });
+  await step('PUT /clients/:id atualiza nome', async () => {
+    const { status, body } = await fetchJSON(
+      `${CLIENTS}/clients/${newClientId}`,
+      json('PUT', { name: `E2E ${run} (editado)` }),
+    );
+    assert.equal(status, 200);
+    assert.equal(body.name, `E2E ${run} (editado)`);
+  });
+
+  console.log('\n📦 MongoDB (products) — CRUD');
+  await step('POST /products cria produto com attributes livres', async () => {
+    const { status, body } = await fetchJSON(
+      `${PRODUCTS}/products`,
+      json('POST', {
+        name: `Caneca E2E ${run}`,
+        category: 'utilidades',
+        price: 25.5,
+        stock: 10,
+        attributes: { capacidade_ml: 350, material: 'cerâmica' },
+      }),
+    );
+    assert.equal(status, 201, JSON.stringify(body));
+    assert.equal(body.attributes.capacidade_ml, 350);
+    newProductId = body.id;
+  });
+  await step('PUT /products/:id atualiza preço', async () => {
+    const { status, body } = await fetchJSON(
+      `${PRODUCTS}/products/${newProductId}`,
+      json('PUT', { price: 30 }),
+    );
+    assert.equal(status, 200);
+    assert.equal(body.price, 30);
+  });
+
+  const stockOf = async (id) => (await fetchJSON(`${PRODUCTS}/products/${id}`)).body.stock;
 
   console.log('\n🛒 Cassandra (orders) — fluxo idempotente + LOGGED BATCH');
   const idemKey = uuid();
@@ -182,6 +252,94 @@ async function fetchJSON(url, init) {
     assert.equal(o?.status, 'paid', 'status do orders_by_client não foi atualizado');
   });
 
+  console.log('\n🔁 Saga, cancelamento e DELETE (estoque Mongo ↔ pedidos Cassandra)');
+  await step('Pedido com 2º item sem estoque → 409 e estoque do 1º item devolvido', async () => {
+    const { status } = await fetchJSON(
+      `${ORDERS}/orders`,
+      json(
+        'POST',
+        {
+          client_id: newClientId,
+          items: [
+            { product_id: newProductId, quantity: 3 },
+            { product_id: PRODUCT_2, quantity: 999999 },
+          ],
+        },
+        { 'Idempotency-Key': uuid() },
+      ),
+    );
+    assert.equal(status, 409);
+    assert.equal(await stockOf(newProductId), 10, 'estoque deveria ter voltado para 10');
+  });
+
+  let orderA;
+  await step('Pedido de 4 unidades baixa o estoque para 6', async () => {
+    const { status, body } = await fetchJSON(
+      `${ORDERS}/orders`,
+      json(
+        'POST',
+        { client_id: newClientId, items: [{ product_id: newProductId, quantity: 4 }] },
+        { 'Idempotency-Key': uuid() },
+      ),
+    );
+    assert.equal(status, 201);
+    assert.equal(body.total, 120);
+    orderA = body.order_id;
+    assert.equal(await stockOf(newProductId), 6);
+  });
+  await step('PATCH status inválido → 400', async () => {
+    const { status } = await fetchJSON(
+      `${ORDERS}/orders/${orderA}/status`,
+      json('PATCH', { status: 'qualquer-coisa' }),
+    );
+    assert.equal(status, 400);
+  });
+  await step('PATCH status=canceled devolve o estoque (volta para 10)', async () => {
+    const { status } = await fetchJSON(
+      `${ORDERS}/orders/${orderA}/status`,
+      json('PATCH', { status: 'canceled' }),
+    );
+    assert.equal(status, 200);
+    assert.equal(await stockOf(newProductId), 10);
+  });
+
+  let orderB;
+  await step('DELETE /orders/:id remove o pedido e devolve o estoque', async () => {
+    const created = await fetchJSON(
+      `${ORDERS}/orders`,
+      json(
+        'POST',
+        { client_id: newClientId, items: [{ product_id: newProductId, quantity: 2 }] },
+        { 'Idempotency-Key': uuid() },
+      ),
+    );
+    assert.equal(created.status, 201);
+    orderB = created.body.order_id;
+    assert.equal(await stockOf(newProductId), 8);
+
+    const del = await fetchJSON(`${ORDERS}/orders/${orderB}`, { method: 'DELETE' });
+    assert.equal(del.status, 204);
+    assert.equal(await stockOf(newProductId), 10);
+  });
+  await step('Pedido excluído some das DUAS tabelas', async () => {
+    const one = await fetchJSON(`${ORDERS}/orders/${orderB}`);
+    assert.equal(one.status, 404);
+    const list = await fetchJSON(`${ORDERS}/orders/by-client/${newClientId}`);
+    assert.ok(!list.body.some((o) => o.order_id === orderB), 'ainda está em orders_by_client');
+  });
+
+  console.log('\n🧹 Limpeza (DELETE dos dados criados)');
+  await step('DELETE /products/:id → 204 e depois 404', async () => {
+    const del = await fetchJSON(`${PRODUCTS}/products/${newProductId}`, { method: 'DELETE' });
+    assert.equal(del.status, 204);
+    assert.equal((await fetchJSON(`${PRODUCTS}/products/${newProductId}`)).status, 404);
+  });
+  await step('DELETE /clients/:id → 204 e depois 404', async () => {
+    const del = await fetchJSON(`${CLIENTS}/clients/${newClientId}`, { method: 'DELETE' });
+    assert.equal(del.status, 204);
+    assert.equal((await fetchJSON(`${CLIENTS}/clients/${newClientId}`)).status, 404);
+  });
+
   console.log('\n📊 Resultado');
   console.log(`   ✔ ${okCount} passes`);
   console.log(`   ✗ ${failCount} fails`);
@@ -190,7 +348,7 @@ async function fetchJSON(url, init) {
     failures.forEach((f) => console.log(`   - ${f.name}: ${f.error}`));
     process.exit(1);
   }
-  console.log('\n✅ Tudo passou — os 3 bancos cloud estão consistentes.');
+  console.log('\n✅ Tudo passou — os 3 bancos estão consistentes.');
 })().catch((err) => {
   console.error('\n✗ Erro fatal:', err);
   process.exit(1);

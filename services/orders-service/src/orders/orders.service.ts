@@ -13,7 +13,11 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { types } from 'cassandra-driver';
 import { CassandraService } from '../cassandra/cassandra.service';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateOrderDto, OrderStatus } from './dto/create-order.dto';
+
+// Status em que o pedido ainda "segura" o estoque reservado. Ao cancelar ou
+// excluir um pedido nesses status, o estoque é devolvido ao products-service.
+const STOCK_HELD_STATUSES: OrderStatus[] = ['pending', 'paid'];
 
 // ---- Tipos cross-service (espelham os contratos dos outros serviços) ----
 export interface ClientSnapshot {
@@ -68,26 +72,42 @@ export class OrdersService {
     const existing = await this.findByIdemKey(idempotencyKey);
     if (existing) {
       this.logger.log({ msg: 'idempotent replay', idempotencyKey, orderId: existing });
-      return this.findOne(existing);
+      try {
+        return await this.findOne(existing);
+      } catch (err) {
+        if (err instanceof NotFoundException) {
+          throw new ConflictException(
+            `A Idempotency-Key ${idempotencyKey} pertence ao pedido ${existing}, que foi excluído. Gere uma nova chave.`,
+          );
+        }
+        throw err;
+      }
     }
 
     // ----- 2. Valida cliente -----
     const clientSnap = await this.fetchClientSnapshot(dto.client_id, correlationId);
 
     // ----- 3. Reserva estoque + busca dados dos produtos (atômico por item) -----
+    // Saga com compensação: se qualquer item falhar (ou o BATCH no Cassandra
+    // falhar), o estoque já reservado dos itens anteriores é devolvido.
     const itemSnapshots: OrderItemSnapshot[] = [];
     let total = 0;
 
-    for (const item of dto.items) {
-      const product = await this.reserveStock(item.product_id, item.quantity, correlationId);
-      const unitPrice = Number(product.price);
-      total += unitPrice * item.quantity;
-      itemSnapshots.push({
-        product_id: product.id,
-        name: product.name,
-        unit_price: unitPrice.toFixed(2),
-        quantity: item.quantity,
-      });
+    try {
+      for (const item of dto.items) {
+        const product = await this.reserveStock(item.product_id, item.quantity, correlationId);
+        const unitPrice = Number(product.price);
+        total += unitPrice * item.quantity;
+        itemSnapshots.push({
+          product_id: product.id,
+          name: product.name,
+          unit_price: unitPrice.toFixed(2),
+          quantity: item.quantity,
+        });
+      }
+    } catch (err) {
+      await this.releaseStock(itemSnapshots, correlationId);
+      throw err;
     }
 
     // ----- 4. Gera order_id (TIMEUUID) -----
@@ -139,7 +159,13 @@ export class OrdersService {
       },
     ];
 
-    await this.cassandra.client.batch(queries, { prepare: true, logged: true });
+    try {
+      await this.cassandra.client.batch(queries, { prepare: true, logged: true });
+    } catch (err) {
+      // Compensação: o pedido não foi gravado, então o estoque volta para o Mongo.
+      await this.releaseStock(itemSnapshots, correlationId);
+      throw err;
+    }
 
     this.logger.log({
       msg: 'order created',
@@ -197,8 +223,12 @@ export class OrdersService {
   // =========================================================================
   // PATCH /orders/:id/status — atualiza nas DUAS tabelas via BATCH
   // =========================================================================
-  async updateStatus(orderId: string, status: string) {
+  async updateStatus(orderId: string, status: OrderStatus, correlationId = '') {
     const order = await this.findOne(orderId); // confirma que existe, traz client_id
+    if (order.status === status) return order;
+    if (order.status === 'canceled') {
+      throw new ConflictException(`Pedido ${orderId} já está cancelado e não pode mudar de status`);
+    }
     const queries = [
       {
         query: 'UPDATE orders SET status = ? WHERE order_id = ?',
@@ -214,12 +244,71 @@ export class OrdersService {
       },
     ];
     await this.cassandra.client.batch(queries, { prepare: true, logged: true });
+
+    // Cancelamento devolve o estoque reservado (exceto se a mercadoria já saiu).
+    if (status === 'canceled' && STOCK_HELD_STATUSES.includes(order.status as OrderStatus)) {
+      await this.releaseStock(order.items, correlationId);
+    }
     return { ...order, status };
+  }
+
+  // =========================================================================
+  // DELETE /orders/:id — remove das DUAS tabelas via LOGGED BATCH
+  // Se o pedido ainda segura estoque (pending/paid), devolve ao products-service.
+  // =========================================================================
+  async remove(orderId: string, correlationId = '') {
+    const order = await this.findOne(orderId);
+    const queries = [
+      {
+        query: 'DELETE FROM orders WHERE order_id = ?',
+        params: [types.TimeUuid.fromString(orderId)],
+      },
+      {
+        query: 'DELETE FROM orders_by_client WHERE client_id = ? AND order_id = ?',
+        params: [types.Uuid.fromString(order.client_id), types.TimeUuid.fromString(orderId)],
+      },
+    ];
+    await this.cassandra.client.batch(queries, { prepare: true, logged: true });
+
+    if (STOCK_HELD_STATUSES.includes(order.status as OrderStatus)) {
+      await this.releaseStock(order.items, correlationId);
+    }
+    this.logger.log({ msg: 'order deleted', orderId, correlationId });
   }
 
   // =========================================================================
   // Helpers privados
   // =========================================================================
+
+  /**
+   * Devolve estoque ao products-service (delta positivo). Usado como
+   * compensação da saga e no cancelamento/exclusão. Falhas são logadas e não
+   * interrompem o fluxo: o erro original é o que interessa ao chamador.
+   */
+  private async releaseStock(
+    items: Array<{ product_id: string; quantity: number }>,
+    correlationId: string,
+  ) {
+    for (const it of items) {
+      try {
+        await firstValueFrom(
+          this.http.patch(
+            `${this.productsUrl}/products/${it.product_id}/stock`,
+            { delta: it.quantity },
+            { headers: { 'x-correlation-id': correlationId } },
+          ),
+        );
+      } catch (err: any) {
+        this.logger.error({
+          msg: 'falha ao devolver estoque (compensação)',
+          productId: it.product_id,
+          quantity: it.quantity,
+          error: err?.message ?? String(err),
+          correlationId,
+        });
+      }
+    }
+  }
   private async findByIdemKey(idemKey: string): Promise<string | null> {
     const rs = await this.cassandra.client.execute(
       'SELECT order_id FROM orders_by_idem_key WHERE idem_key = ?',

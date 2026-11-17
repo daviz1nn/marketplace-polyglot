@@ -2,9 +2,11 @@ import {
   Body,
   Controller,
   DefaultValuePipe,
+  Delete,
   Get,
   Headers,
   HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -69,8 +71,23 @@ export class OrdersController {
   @Patch(':id/status')
   @ApiOperation({
     summary: 'Atualiza status do pedido (BATCH nas 2 tabelas)',
+    description: 'Mudar para canceled devolve o estoque se o pedido estava pending/paid.',
   })
-  updateStatus(@Param('id') id: string, @Body() dto: UpdateStatusDto) {
-    return this.orders.updateStatus(id, dto.status);
+  updateStatus(@Param('id') id: string, @Body() dto: UpdateStatusDto, @Req() req: Request) {
+    const correlationId = (req.headers['x-correlation-id'] as string) ?? '';
+    return this.orders.updateStatus(id, dto.status, correlationId);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Remove um pedido (LOGGED BATCH nas 2 tabelas)',
+    description:
+      'Apaga o pedido de orders e orders_by_client. Se o pedido ainda segura ' +
+      'estoque (pending/paid), o estoque é devolvido ao products-service.',
+  })
+  remove(@Param('id') id: string, @Req() req: Request) {
+    const correlationId = (req.headers['x-correlation-id'] as string) ?? '';
+    return this.orders.remove(id, correlationId);
   }
 }
